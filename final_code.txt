@@ -1,0 +1,314 @@
+CREATE TABLE OrdersandShipments (
+    OrderID INT,
+    OrderItemID INT,
+    OrderYear INT,
+    OrderMonth INT,
+    OrderDay INT,
+    OrderTime TIME,
+    OrderQuantity INT,
+    ProductDepartment VARCHAR(255),
+    ProductCategory VARCHAR(255),
+    ProductName VARCHAR(255),
+    ProductID VARCHAR(100),
+    CustomerID INT,
+    CustomerAccountID VARCHAR(100),
+    CustomerMarket VARCHAR(255),
+    CustomerRegion VARCHAR(255),
+    CustomerCountry VARCHAR(255),
+    WarehouseCountry VARCHAR(255),
+    ShipmentYear INT,
+    ShipmentMonth INT,
+    ShipmentDay INT,
+    ShipmentMode VARCHAR(255),
+    ShipmentDaysScheduled INT,
+    GrossSales DECIMAL(10,2),
+    Discount DECIMAL(5,2),
+    Profit DECIMAL(10,2)
+);
+LOAD DATA LOCAL INFILE 'C:/Users/aks19/OneDrive/sem5/DBMS/project/OrdersandShipments.csv'
+INTO TABLE OrdersandShipments2
+FIELDS TERMINATED BY ',' ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES;
+
+SELECT * FROM OrdersandShipments2 LIMIT 5;
+
+
+-- Table: Products
+CREATE TABLE Products2 (
+    ProductID VARCHAR(255) PRIMARY KEY,
+    ProductDepartment VARCHAR(255),
+    ProductCategory VARCHAR(255),
+    ProductName VARCHAR(255)
+);
+
+-- Table: Customers
+CREATE TABLE Customers (
+    CustomerAccountID VARCHAR(255) PRIMARY KEY,
+    CustomerID VARCHAR(50),
+    CustomerMarket VARCHAR(255),
+    CustomerRegion VARCHAR(255),
+    CustomerCountry VARCHAR(255),
+    WarehouseCountry VARCHAR(255)
+);
+
+CREATE TABLE OrdersShipments (
+    OrderID INT,
+    OrderItemID INT PRIMARY KEY ,
+    OrderDay INT,
+    OrderMonth INT,
+    OrderYear INT,
+    OrderTime TIME,
+    OrderQuantity INT,
+    ProductID VARCHAR(255),
+    CustomerAccountID VARCHAR(255),
+    ShipmentYear INT,
+    ShipmentMonth INT,
+    ShipmentDay INT,
+    ShipmentMode VARCHAR(255),
+    ShipmentDaysScheduled INT,
+    GrossSales DECIMAL(10,2),
+    Discount DECIMAL(5,2),
+    Profit DECIMAL(10,2),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID),
+    FOREIGN KEY (CustomerAccountID) REFERENCES Customers(CustomerAccountID)
+);
+
+INSERT INTO Products (ProductID, ProductDepartment, ProductCategory, ProductName)
+SELECT DISTINCT ProductID, ProductDepartment, ProductCategory, ProductName
+FROM OrdersandShipments
+WHERE ProductID IS NOT NULL; -- Ensure to exclude NULL ProductIDs if they shouldn't be included
+
+SELECT * FROM products LIMIT 5;
+
+
+INSERT INTO Customers (CustomerAccountID, CustomerID, CustomerMarket, CustomerRegion, CustomerCountry, WarehouseCountry)
+SELECT DISTINCT CustomerAccountID, CustomerID, CustomerMarket, CustomerRegion, CustomerCountry, WarehouseCountry
+FROM OrdersandShipments
+WHERE CustomerAccountID IS NOT NULL; -- Exclude NULL CustomerAcctIDs if needed
+SELECT * FROM customers LIMIT 5;
+
+
+INSERT INTO OrdersShipments (OrderID, OrderItemID, OrderYearMonth, OrderDay, OrderMonth, OrderYear, OrderTime, OrderQuantity, ProductID, CustomerAccountID, ShipmentYear, ShipmentMonth, ShipmentDay, ShipmentMode, ShipmentDaysScheduled, GrossSales, Discount, Profit)
+SELECT DISTINCT OrderID, OrderItemID, OrderYearMonth, OrderDay, OrderMonth, OrderYear, OrderTime, OrderQuantity, ProductID, CustomerAccountID, ShipmentYear, ShipmentMonth, ShipmentDay, ShipmentMode, ShipmentDaysScheduled, GrossSales, Discount, Profit
+FROM OrdersandShipments;
+
+SELECT * FROM OrdersShipments3 LIMIT 5;
+
+
+
+
+spark.stop()
+
+import org.apache.spark.sql.SparkSession
+val spark = SparkSession.builder() .master("local[*]").appName("SparkByExamples.com").getOrCreate()
+
+val Products = spark.read.format("jdbc").option("url", "jdbc:mysql://localhost/PROJECTF").option("driver", "com.mysql.cj.jdbc.Driver").option("dbtable", "Products").option("user", "root") .option("password", "Akshayaa_19").load()
+
+val Customers = spark.read.format("jdbc").option("url", "jdbc:mysql://localhost/PROJECTF").option("driver", "com.mysql.cj.jdbc.Driver").option("dbtable", "Customers").option("user", "root") .option("password", "Akshayaa_19").load()
+
+val OrdersandShipments = spark.read.format("jdbc").option("url", "jdbc:mysql://localhost/PROJECTF").option("driver", "com.mysql.cj.jdbc.Driver").option("dbtable", "OrdersShipments").option("user", "root") .option("password", "Akshayaa_19").load()
+
+import org.apache.spark.sql.functions._
+// Define a function to count null values for each column
+def countNulls(df: org.apache.spark.sql.DataFrame): org.apache.spark.sql.DataFrame = {df.select(df.columns.map(c => sum(when(col(c).isNull, 1).otherwise(0)).alias(c)): _*)}
+
+// Count null values for Products DataFrame
+val productsNullCounts = countNulls(Products)
+productsNullCounts.show()
+
+// Count null values for OrdersandShipments DataFrame
+val ordersShipmentNullCounts = countNulls(OrdersandShipments)
+ordersShipmentNullCounts.show()
+
+// Count null values for Customers DataFrame
+val customersNullCounts = countNulls(Customers)
+customersNullCounts.show()
+
+
+
+
+
+val ordersWithDate = OrdersandShipments.withColumn("OD", date_format(concat_ws("-", col("OrderYear"), col("OrderMonth"), col("OrderDay")), "yyyy/MM/dd"))
+
+val shipmentsWithDate = ordersWithDate.withColumn("SD", date_format(concat_ws("-", col("ShipmentYear"), col("ShipmentMonth"), col("ShipmentDay")), "yyyy/MM/dd"))
+
+val cleanShipments = shipmentsWithDate.na.drop(Seq("OD", "SD"))
+val shipmentsWithDate = cleanShipments
+
+
+
+ val OrdersandShipments = shipmentsWithDate.withColumn("OrderDate", to_date(col("OD"), "yyyy/MM/dd")).withColumn("ShipmentDate", to_date(col("SD"), "yyyy/MM/dd")).withColumn("OrdersTime", unix_timestamp(col("OrderTime"), "HH:mm:ss"))
+
+val OrderandShipment = OrdersandShipments.drop("OrderYear", "OrderMonth", "OrderDay", "ShipmentYear", "ShipmentMonth", "ShipmentDay",  "ProductDepartment", "ProductCategory", "ProductName", "CustomerID", "CustomerMarket", "CustomerRegion", "CustomerCountry","WarehouseCountry","OD","SD","OrderTime")
+
+ OrderandShipment.show()
+
+val jdbcUrl = "jdbc:mysql://localhost/PROJECTF"
+val connectionProperties = new java.util.Properties()
+connectionProperties.put("user", "root")
+connectionProperties.put("password", "Akshayaa_19")
+connectionProperties.put("driver", "com.mysql.cj.jdbc.Driver")
+
+OrderandShipment.write.mode("overwrite").jdbc(jdbcUrl,  "processedfinal", connectionProperties)
+
+val OrderandShipment = spark.read.format("jdbc").option("url", "jdbc:mysql://localhost/PROJECTF").option("driver", "com.mysql.cj.jdbc.Driver").option("dbtable", "processedfinal").option("user", "root") .option("password", "Akshayaa_19").load()
+
+
+
+1)market analysis
+
+
+
+val joinedData = OrderandShipment.join(Customers, Seq("ProductID")
+val marketAnalysis = joinedData.groupBy("CustomerMarket").agg(sum("GrossSales").alias("TotalSales"),sum("Profit").alias("TotalProfit"))
+
+marketAnalysis.write.mode("overwrite").jdbc(jdbcUrl, "marketAnalysis", connectionProperties)
+
+2)
+val joinedData = OrderandShipment.join(Customers, Seq("CustomerAccountID")
+val uniqueCustomersByRegion = joinedData.groupBy("CustomerRegion").agg(countDistinct("CustomerAccountID").alias("UniqueCustomers")).orderBy(desc("UniqueCustomers"))
+
+uniqueCustomersByRegion.write.mode("overwrite").jdbc(jdbcUrl, "uniqueCustomersByRegion", connectionProperties)
+
+3)
+import org.apache.spark.sql.expressions.Window
+val joinedData = OrderandShipment.join(Products, Seq("ProductID")
+
+val highestCategoryByMonth = joinedData.withColumn("Year", year(col("OrderDate"))).withColumn("Month", month(col("OrderDate"))).groupBy("Year", "Month", "ProductCategory").agg(sum("OrderQuantity").alias("TotalQuantity"))
+
+val windowSpec = Window.partitionBy("Year", "Month").orderBy(desc("TotalQuantity"))
+
+val rankedCategories = highestCategoryByMonth.withColumn("rank", row_number().over(windowSpec)).where(col("rank") === 1).drop("rank", "TotalQuantity")
+
+rankedCategories.write.mode("overwrite").jdbc(jdbcUrl, "rankedCategories", connectionProperties)
+
+4)customer orderpattern
+
+
+val joinedData = OrderandShipment.join(Customers, Seq("CustomerAccountID")
+val windowSpec = Window.partitionBy("CustomerAccountID").orderBy("OrderDate")
+
+val ordersWithTimeGap = joinedData.withColumn("NextPurchaseDate", lead(col("OrderDate"), 1).over(windowSpec)).withColumn("TimeGapDays", when(col("NextPurchaseDate").isNull, lit(0)).otherwise(datediff(col("NextPurchaseDate"), col("OrderDate")))).filter(col("TimeGapDays") =!= 0).select("CustomerAccountID", "OrderDate", "NextPurchaseDate", "TimeGapDays").orderBy("CustomerAccountID")
+
+ordersWithTimeGap.write.mode("overwrite").jdbc(jdbcUrl, "customerTimeGap", connectionProperties)
+
+5)
+import org.apache.spark.sql.functions._
+
+val shipmentWarehouseAnalysis = OrderandShipment.withColumn("Month", month(col("OrderDate"))).withColumn("Year", year(col("OrderDate"))).groupBy("Year", "Month","WarehouseCountry").agg(count("*").alias("ShipmentCount")).orderBy("Year", "Month")
+
+shipmentWarehouseAnalysis.write.mode("overwrite").jdbc(jdbcUrl, "shipmentWarehouseAnalysis", connectionProperties)
+
+
+6) shipment mode efficiency %
+val expectedShipmentDate = date_add(col("OrderDate"), col("ShipmentDaysScheduled"))
+
+ val ShipmentStatus = OrderandShipment.withColumn("ExpectedShipmentDate", expectedShipmentDate).withColumn("IsLate", when(col("ShipmentDate").gt(col("ExpectedShipmentDate")), 1).otherwise(0)).withColumn("IsOnTime", when(col("ShipmentDate").equalTo(col("ExpectedShipmentDate")), 1).otherwise(0)).withColumn("IsFast",when(col("ShipmentDate").lt(col("ExpectedShipmentDate")), 1).otherwise(0))
+
+val ShipmentCounts = ShipmentStatus.groupBy("ShipmentMode")agg(
+          sum("IsLate").alias("LateShipment"),
+          sum("IsOnTime").alias("OnTimeShipment"),
+          sum("IsFast").alias("FastShipment")
+        )
+ShipmentCounts.write.mode("overwrite").jdbc(jdbcUrl, "ShipmentModeEfficiency", connectionProperties)
+
+
+7) productcategory
+
+import org.apache.spark.sql.functions._
+
+// Extracting the year from the OrderDate
+val profitByYearAndCategory = OrderandShipment.withColumn("Year", year(col("OrderDate"))).groupBy("Year", "ProductCategory").agg(sum("Profit").alias("TotalProfit")).orderBy("Year", "ProductCategory")
+
+// Categorizing overall profit in a year for each product category
+val categorizeProfitTier = udf((profit: Double) => {
+  if (profit >= 5000) "High Profit"
+  else if (profit >= 2000 && profit < 5000) "Medium Profit"
+  else if (profit >= 1000 && profit < 2000) "Low Profit"
+  else "Very Low Profit"
+})
+
+val categorizedProfitsByYearAndCategory = profitByYearAndCategory.withColumn("ProfitCategory", categorizeProfitTier(col("TotalProfit")))
+
+
+
+
+categorizedProfitsByYearAndCategory.write.mode("overwrite").jdbc(jdbcUrl, "CategorizedProfitsByYearAndCategory", connectionProperties)
+
+
+
+8)
+import org.apache.spark.sql.functions._
+val joinedData = OrderandShipment.join(Products, Seq("ProductID")
+
+val grossSalesForMenOrWomenProducts = joinedData.groupBy("ProductName").agg(sum("GrossSales").alias("TotalGrossSales")).orderBy(desc("TotalGrossSales"))
+
+
+val labeledProducts = grossSalesForMenOrWomenProducts.withColumn("Label",
+ when(col("ProductName").contains("Men"), "Men").when(col("ProductName").contains("Women"), "Women").when(col("ProductName").contains("Girl"), "Girl").when(col("ProductName").contains("Boy"), "Boy").otherwise("Unspecified")
+)
+
+// Show the results with the added label column
+labeledProducts.write.mode("overwrite").jdbc(jdbcUrl, "labeledProducts", connectionProperties)
+
+
+
+9)
+
+
+val ordersWithHourInTimeZone = OrderandShipment.withColumn("HourInCurrentTZ", hour(from_unixtime(col("OrdersTime"), "yyyy-MM-dd HH:mm:ss").cast("timestamp").as(current_timezone().toString)))
+
+val peakHours = ordersWithHourInTimeZone.groupBy("HourInCurrentTZ").count().orderBy(col("count").desc)
+
+peakHours.write.mode("overwrite").jdbc(jdbcUrl, "peakHours", connectionProperties)
+
+10)
+import org.apache.spark.sql.functions._
+
+val ordersWithDayOfWeek = OrderandShipment.withColumn("OrderDayOfWeek", dayofweek(col("OrderDate")))
+
+
+val Popwarehouse = ordersWithDayOfWeek.groupBy("OrderDayOfWeek", "WarehouseCountry").agg(count("OrderID").alias("ShipmentCount"))
+ .orderBy(col("OrderDayOfWeek"), col("ShipmentCount").desc)
+
+val topwarehouseByDayOfWeek = Popwarehouse.groupBy("OrderDayOfWeek").agg(
+    first("WarehouseCountry").alias("MostShippedCountry"),
+    max("ShipmentCount").alias("MaxShipments")
+  ).orderBy("OrderDayOfWeek")
+
+topwarehouseByDayOfWeek.write.mode("overwrite").jdbc(jdbcUrl, "topCountryByDayOfWeek", connectionProperties)
+
+
+11)*
+
+import org.apache.spark.sql.expressions.Window
+
+val ordersWithHourAndCountry = joinedData.withColumn("OrderHour", hour(from_unixtime(col("OrdersTime"))))
+
+val windowSpec = Window.partitionBy("OrderHour").orderBy(desc("AvgProfit"))
+
+val topCountryByHour = ordersWithHourAndCountry.groupBy("OrderHour", "CustomerCountry").agg(avg("Profit").alias("AvgProfit")).withColumn("rank", row_number().over(windowSpec)).filter(col("rank") === 1).drop("rank").orderBy("OrderHour")
+
+topCountryByHour.write.mode("overwrite").jdbc(jdbcUrl, "topCountryByHour", connectionProperties)
+
+
+12)
+val joinedData = OrderandShipment.join(Products, Seq("ProductID")
+val christmasProfit = joinedData.withColumn("DayOfYear", dayofyear(col("OrderDate"))).filter(col("DayOfYear") === 359) // Assuming 359 represents December 25th
+
+val profitByProductDuringChristmas = christmasProfit.groupBy("ProductID", "ProductName").agg(sum("Profit").alias("TotalProfitDuringChristmas")).orderBy(desc("TotalProfitDuringChristmas"))
+
+profitByProductDuringChristmas.write.mode("overwrite").jdbc(jdbcUrl, "profitByProductDuringChristmas", connectionProperties)
+
+
+
+
+
+
+
+
+
+
+
+
